@@ -1,0 +1,120 @@
+---
+title: "Coursera Machine Learning Final Project"
+author: "Collin S"
+date: "August 28, 2016"
+output: html_document
+---
+
+## Background
+This project's goal is to correctly classify the different barbell lifts.*(see source) The particpants did 5 different types of positions. The positions are sitting-down, standing-up, standing, walking, and sitting.  
+
+### load appropriate packages
+
+```{r results = 'hide', message = FALSE, warning = FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+library(knitr)
+```
+
+## Data input and Cleaning
+
+```{r}
+# set seed for reproducibility concerns
+set.seed(12345)
+
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training <- read.csv(url(trainUrl), na.strings=c('NA','#DIV/0!',''))
+testing <- read.csv(url(testUrl), na.strings=c('NA','#DIV/0!',''))
+# check if variable names match
+# they all match but training has classe variable and testing does not!
+names(testing) == names(training)
+```
+
+### Split test data into test and training sets for model selection
+
+```{r}
+# Partition data into training and test sets 
+set.seed(33)
+inTrain <- createDataPartition(training$classe, p = .65, list = F)
+train1 <- training[inTrain, ]
+train2 <- training[-inTrain, ]
+
+# now going to do some data cleaning. This includes excluding unnecessary variables, removing near zero variance data, and data with lots of NAs 
+zerovar <- nearZeroVar(train1)
+train1 <- train1[, -zerovar]
+train2 <- train2[, -zerovar]
+
+mostlyNA <- sapply(train1, function(x) mean(is.na(x))) > 0.80
+train1 <- train1[, mostlyNA==F]
+train2 <- train2[, mostlyNA==F]
+
+train1 <- train1[, -(1:5)]
+train2 <- train2[, -(1:5)]
+```
+
+## Fitting a model and cross validation
+
+```{r}
+fitControl <- trainControl(method="cv", number=3, verboseIter=F)
+
+fit <- train(classe ~ ., data=train1, method="rf", trControl=fitControl)
+
+# final model
+fit$finalModel
+```
+
+## Fitting selected model to the entire test set
+```{r}
+# now go through the same process as before, but include all of the training data. This will give the algorithm more information thus improving the model. 
+
+nzv <- nearZeroVar(training)
+training <- training[, -nzv]
+testing <- testing[, -nzv]
+
+# remove variables that are almost always NA
+mostlyNA <- sapply(training, function(x) mean(is.na(x))) > 0.80
+training <- training[, mostlyNA==F]
+testing <- testing[, mostlyNA==F]
+
+# Remove variables that are not necessary
+training <- training[, -(1:5)]
+testing <- testing[, -(1:5)]
+
+# Fit the whole training dataset to the random forest model with a 3 k fold cross validation
+fitControl <- trainControl(method="cv", number=3, verboseIter=F)
+fit <- train(classe ~ ., data=training, method="rf", trControl=fitControl)
+
+# Test set prediction
+predtest <- predict(fit, newdata=testing)
+```
+
+
+## Results
+``` {r}
+# character vector conversion
+predtest <- as.character(predtest)
+
+# function that writes results to a table
+pml_write_files <- function(x) {
+  n <- length(x)
+  for(i in 1:n) {
+    filename <- paste0("problem_id_", i, ".csv")
+    write.table(x[i], file=filename, quote=F, row.names=F, col.names=F)
+  }
+}
+
+# prediction file to test with the quiz
+pml_write_files(predtest)
+```
+
+
+### Source:
+Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6.
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz4IjqZqh3W
+
